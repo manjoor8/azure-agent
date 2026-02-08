@@ -1,6 +1,7 @@
 import time
 import uuid
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.concurrency import run_in_threadpool
 from fastapi.middleware.cors import CORSMiddleware
 from config import logger, validate_config, PORT
 from models import ChatCompletionRequest, ChatCompletionResponse, ChatCompletionChoice, Message, ChatCompletionUsage
@@ -78,8 +79,8 @@ async def chat_completions(request: ChatCompletionRequest):
         if not user_message:
             raise HTTPException(status_code=400, detail="No user message found in request")
 
-        # Process the query through the intent handler
-        response_text = intent_handler.process_query(user_message)
+        # Process the query through the intent handler in a background thread
+        response_text = await run_in_threadpool(intent_handler.process_query, user_message)
 
         # Build response
         response = ChatCompletionResponse(

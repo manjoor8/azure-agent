@@ -4,6 +4,7 @@ from azure.mgmt.compute import ComputeManagementClient
 from azure.mgmt.network import NetworkManagementClient
 from azure.mgmt.monitor import MonitorManagementClient
 from azure.mgmt.resource import ResourceManagementClient
+from azure.mgmt.subscription import SubscriptionClient
 from azure.mgmt.resourcegraph import ResourceGraphClient
 from azure.mgmt.resourcegraph.models import QueryRequest
 from config import AZURE_TENANT_ID, AZURE_CLIENT_ID, AZURE_CLIENT_SECRET, AZURE_SUBSCRIPTION_ID, logger
@@ -17,12 +18,13 @@ class AzureService:
         )
         self.subscription_id = AZURE_SUBSCRIPTION_ID
         
-        # Initialize Clients
-        self.resource_client = ResourceManagementClient(self.credential, self.subscription_id)
-        self.compute_client = ComputeManagementClient(self.credential, self.subscription_id)
-        self.network_client = NetworkManagementClient(self.credential, self.subscription_id)
-        self.monitor_client = MonitorManagementClient(self.credential, self.subscription_id)
-        self.graph_client = ResourceGraphClient(self.credential)
+        # Initialize Clients with 10s connection timeouts
+        self.resource_client = ResourceManagementClient(self.credential, self.subscription_id, connection_timeout=10)
+        self.compute_client = ComputeManagementClient(self.credential, self.subscription_id, connection_timeout=10)
+        self.network_client = NetworkManagementClient(self.credential, self.subscription_id, connection_timeout=10)
+        self.monitor_client = MonitorManagementClient(self.credential, self.subscription_id, connection_timeout=10)
+        self.graph_client = ResourceGraphClient(self.credential, connection_timeout=10)
+        self.subscription_client = SubscriptionClient(self.credential, connection_timeout=10)
 
     def list_vms(self, resource_group=None):
         """List all VMs in a subscription or specific resource group."""
@@ -135,20 +137,82 @@ class AzureService:
             logger.error(f"Error listing Public IPs: {e}")
             return {"error": str(e)}
 
-    def query_resources(self, resource_type_filter: str = None):
-        """Query any resource type using Azure Resource Graph."""
+    def get_resource_metrics(self, resource_id, metric_name="Percentage CPU", timespan="PT24H"):
+        """Fetch a specific metric for a resource."""
         try:
-            query = "resources | project name, type, resourceGroup, location, tags, subscriptionId"
+            end_time = datetime.datetime.utcnow()
+            start_time = end_time - datetime.timedelta(hours=24)
+            
+            metrics_data = self.monitor_client.metrics.list(
+                resource_id,
+                timespan=timespan,
+                interval='PT1H',
+                metricnames=metric_name,
+                aggregation='Maximum'
+            )
+            
+            vals = []
+            for item in metrics_data.value:
+                for timeseries in item.timeseries:
+                    for data in timeseries.data:
+                        if data.maximum is not None:
+                            vals.append(data.maximum)
+            
+            return max(vals) if vals else 0
+        except Exception as e:
+            logger.error(f"Error fetching metrics for {resource_id}: {e}")
+            return 0
+
+    def query_resources(self, resource_type_filter: str = None, limit: int = 20, custom_where: str = None, project_fields: str = None):
+        """Query any resource type using Azure Resource Graph with optimized projection."""
+        try:
+            query = "resources"
+            
             if resource_type_filter:
                 query += f" | where type =~ '{resource_type_filter}'"
+            
+            if custom_where:
+                query += f" | where {custom_where}"
+            
+            # Project specific fields or use a lightweight default
+            if project_fields:
+                query += f" | project {project_fields}"
+            else:
+                query += " | project name, type, resourceGroup, location, tags, subscriptionId"
+            
+            # Add protective limit
+            query += f" | take {limit}"
+            
+            logger.info(f"Executing Optimized Resource Graph Query: {query}")
             
             request = QueryRequest(
                 subscriptions=[self.subscription_id],
                 query=query
             )
             
+            # Execute with a 20-second timeout to stay within the tool's 30s limit
             response = self.graph_client.resources(request)
             return response.data
         except Exception as e:
             logger.error(f"Error querying Resource Graph: {e}")
+            return {"error": str(e)}
+
+    def get_resource_types(self):
+        """Fetch all unique resource types present in the subscription."""
+        try:
+            query = "resources | summarize count() by type | project type"
+            request = QueryRequest(subscriptions=[self.subscription_id], query=query)
+            response = self.graph_client.resources(request)
+            return [r['type'] for r in response.data]
+        except Exception as e:
+            logger.error(f"Error fetching schema: {e}")
+            return []
+
+    def list_subscriptions(self):
+        """List all subscriptions the credential has access to."""
+        try:
+            subs = self.subscription_client.subscriptions.list()
+            return [{"id": s.subscription_id, "display_name": s.display_name, "state": s.state} for s in subs]
+        except Exception as e:
+            logger.error(f"Error listing subscriptions: {e}")
             return {"error": str(e)}

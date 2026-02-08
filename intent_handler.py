@@ -2,55 +2,30 @@ import re
 from azure_service import AzureService
 from config import logger, AZURE_SUBSCRIPTION_ID
 
-# Mapping for Top 50+ Azure Services
-AZURE_SERVICE_MAP = {
-    # Compute
-    "vm": "Microsoft.Compute/virtualMachines",
-    "function": "Microsoft.Web/sites",
-    "web app": "Microsoft.Web/sites",
-    "app service": "Microsoft.Web/sites",
-    "aks": "Microsoft.ContainerService/managedClusters",
-    "kubernetes": "Microsoft.ContainerService/managedClusters",
-    "acr": "Microsoft.ContainerRegistry/registries",
-    
-    # Storage & Data
-    "storage": "Microsoft.Storage/storageAccounts",
-    "sql": "Microsoft.Sql/servers/databases",
-    "cosmos": "Microsoft.DocumentDB/databaseAccounts",
-    "redis": "Microsoft.Cache/Redis",
-    "postgresql": "Microsoft.DBforPostgreSQL/servers",
-    "mysql": "Microsoft.DBforMySQL/servers",
-    "synapse": "Microsoft.Synapse/workspaces",
-    "databricks": "Microsoft.Databricks/workspaces",
-    
-    # Networking
-    "vnet": "Microsoft.Network/virtualNetworks",
-    "nsg": "Microsoft.Network/networkSecurityGroups",
-    "load balancer": "Microsoft.Network/loadBalancers",
-    "firewall": "Microsoft.Network/azureFirewalls",
-    "application gateway": "Microsoft.Network/applicationGateways",
-    "front door": "Microsoft.Network/frontdoors",
-    "cdn": "Microsoft.Cdn/profiles",
-    
-    # Security & Management
-    "key vault": "Microsoft.KeyVault/vaults",
-    "monitor": "Microsoft.Insights/components",
-    "log analytics": "Microsoft.OperationalInsights/workspaces",
-    "automation": "Microsoft.Automation/automationAccounts",
-    "policy": "Microsoft.Authorization/policyDefinitions",
-    "sentinel": "Microsoft.OperationalInsights/workspaces",
-    
-    # Integration & AI
-    "service bus": "Microsoft.ServiceBus/namespaces",
-    "logic app": "Microsoft.Logic/workflows",
-    "event grid": "Microsoft.EventGrid/topics",
-    "event hub": "Microsoft.EventHub/namespaces",
-    "api management": "Microsoft.ApiManagement/service",
-    "search": "Microsoft.Search/searchServices",
-    "cognitive": "Microsoft.CognitiveServices/accounts",
-    "machine learning": "Microsoft.MachineLearningServices/workspaces",
-    "purview": "Microsoft.Purview/accounts"
-}
+# Robust Mapping: Groups of aliases for each Azure Resource Provider
+AZURE_RESOURCES = [
+    {"provider": "Microsoft.Compute/virtualMachines", "aliases": ["vm", "virtual machine", "vms", "instances"]},
+    {"provider": "Microsoft.Web/sites", "aliases": ["web app", "webapp", "function", "app service", "site", "serverless"]},
+    {"provider": "Microsoft.ContainerService/managedClusters", "aliases": ["aks", "kubernetes", "k8s", "cluster"]},
+    {"provider": "Microsoft.Storage/storageAccounts", "aliases": ["storage", "stg", "blob", "account", "file share"]},
+    {"provider": "Microsoft.Sql/servers/databases", "aliases": ["sql", "database", "db"]},
+    {"provider": "Microsoft.DocumentDB/databaseAccounts", "aliases": ["cosmos", "nosql", "documentdb"]},
+    {"provider": "Microsoft.Network/virtualNetworks", "aliases": ["vnet", "network", "virtual network"]},
+    {"provider": "Microsoft.Network/networkSecurityGroups", "aliases": ["nsg", "firewall", "security group"]},
+    {"provider": "Microsoft.KeyVault/vaults", "aliases": ["key vault", "kv", "secret", "vault"]},
+    {"provider": "Microsoft.Network/publicIPAddresses", "aliases": ["public ip", "pip", "ip address"]},
+    {"provider": "Microsoft.Compute/disks", "aliases": ["disk", "vhd", "drive"]},
+    {"provider": "Microsoft.Network/networkInterfaces", "aliases": ["nic", "network interface", "adapter"]},
+    {"provider": "Microsoft.Insights/components", "aliases": ["app insights", "application insights", "monitor", "telemetry"]},
+    {"provider": "Microsoft.OperationalInsights/workspaces", "aliases": ["log analytics", "workspace", "logs"]},
+    {"provider": "Microsoft.ContainerRegistry/registries", "aliases": ["acr", "registry", "docker registry"]},
+    {"provider": "Microsoft.ApiManagement/service", "aliases": ["apim", "api management"]},
+    {"provider": "Microsoft.Logic/workflows", "aliases": ["logic app", "workflow"]},
+    {"provider": "Microsoft.ServiceBus/namespaces", "aliases": ["service bus", "bus", "queue", "topic"]},
+    {"provider": "Microsoft.EventHub/namespaces", "aliases": ["event hub", "hub"]},
+    {"provider": "Microsoft.RecoveryServices/vaults", "aliases": ["recovery services", "asr", "backup", "vault"]},
+    {"provider": "Microsoft.Cache/Redis", "aliases": ["redis", "cache"]}
+]
 
 class IntentHandler:
     def __init__(self):
@@ -61,9 +36,31 @@ class IntentHandler:
         query = query.lower()
         logger.info(f"Processing query: {query}")
 
+        # Intent: Advanced Metrics Filtering (e.g., CPU > 60%)
+        # Matches: "CPU greater than 60", "cpu utilization was higher than 80%", "memory below 20%"
+        perf_match = re.search(r"(cpu|memory)(?:\s+\w+){0,3}\s+(?:is|was|were|are|of)?\s*(?:greater|higher|more|above|less|below|under)\s*(?:than|to|of)?\s*(\d+)(?:%)?", query)
+        if perf_match:
+            logger.info(f"Matched Intent: Advanced Metrics Filtering (Regex: {perf_match.group(0)})")
+            metric_type = perf_match.group(1)
+            # Find the direction manually for better accuracy
+            direction = "greater" if any(kw in query for kw in ["greater", "higher", "more", "above"]) else "less"
+            threshold = int(perf_match.group(2))
+            return self._handle_performance_filter(metric_type, direction, threshold)
+
+        # Intent: Capabilities / Help
+        if any(kw in query for kw in ["what can you do", "help", "capabilities", "list features"]):
+            logger.info("Matched Intent: Capabilities/Help")
+            return self._handle_help()
+
         # Intent: List VMs
         if any(kw in query for kw in ["list vms", "show vms", "show all vms", "get vms"]):
+            logger.info("Matched Intent: List VMs")
             return self._handle_list_vms()
+
+        # Intent: VM Disk Inventory/Count
+        if any(kw in query for kw in ["disk count", "no of disks", "number of disks", "disks attached"]):
+            logger.info("Matched Intent: VM Disk Inventory/Count")
+            return self._handle_vm_disk_count()
 
         # Intent: VM Status/Health
         vm_status_match = re.search(r"(status|health|state) of (?:vm|virtual machine) ([\w-]+)", query)
@@ -89,10 +86,46 @@ class IntentHandler:
         if any(kw in query for kw in ["public ips", "ip addresses", "ips"]):
             return self._handle_list_public_ips()
 
-        # Generic Intent: Top 50 Services Discovery
-        for keyword, provider in AZURE_SERVICE_MAP.items():
-            if keyword in query:
-                return self._handle_generic_discovery(keyword, provider)
+        # Intent: List Subscriptions
+        if any(kw in query for kw in ["list subscriptions", "show subscriptions"]):
+            logger.info("Matched Intent: List Subscriptions")
+            return self._handle_list_subscriptions()
+
+        # Enhanced Resource Discovery
+        # We check every alias for every resource group defined above
+        for resource in AZURE_RESOURCES:
+            provider = resource["provider"]
+            for alias in resource["aliases"]:
+                # Use regex for word-boundary matching (prevents "vm" matching "vmname")
+                # Also handles optional trailing 's' for plurals
+                pattern = rf"\b{alias}s?\b"
+                if re.search(pattern, query):
+                    logger.info(f"Matched Resource: {alias} -> {provider}")
+                    state_filter = None
+                    if "unattached" in query:
+                        state_filter = "properties.diskState == 'Unattached' or properties.state == 'Unattached' or isempty(managedBy)"
+                    elif any(kw in query for kw in ["stopped", "deallocated", "shutdown"]):
+                        state_filter = "properties.extended.instanceView.powerState.displayStatus has 'stopped' or properties.state == 'Stopped'"
+                    
+                    return self._handle_generic_discovery(alias, provider, state_filter)
+
+        # FINAL FALLBACK: Semantic Discovery
+        # We query Azure to see what types actually exist, then fuzzy-match against the user's query
+        logger.info("Starting Semantic Discovery Fallback...")
+        available_types = self.azure.get_resource_types()
+        
+        # Look for a type that contains any word from the user's query
+        words = [w for w in query.split() if len(w) > 3]
+        for azure_type in available_types:
+            type_parts = azure_type.lower().split('/')
+            # Check if any word from the query matches any part of the resource type
+            if any(word in type_parts[-1] or word in azure_type.lower() for word in words):
+                logger.info(f"Semantically Matched: {azure_type}")
+                return self._handle_generic_discovery(words[0], azure_type)
+
+        # Still nothing? Try a broad property search
+        if words:
+            return self._handle_dynamic_search(words[:3])
 
         # Default fallback
         return (
@@ -129,7 +162,7 @@ class IntentHandler:
             return f"Could not find VM named `{vm_name}` in the subscription."
 
         status = self.azure.get_vm_status(target_vm['resource_group'], target_vm['name'])
-        if "error" in status:
+        if isinstance(status, dict) and "error" in status:
             return f"Error fetching status for `{vm_name}`: {status['error']}"
 
         return (
@@ -208,8 +241,8 @@ class IntentHandler:
             response += f"| {ip['name']} | {ip['ip_address']} | {ip['resource_group']} | {ip['location']} | {ip['sku']} |\n"
         return response
 
-    def _handle_generic_discovery(self, keyword, provider):
-        resources = self.azure.query_resources(provider)
+    def _handle_generic_discovery(self, keyword, provider, state_filter=None):
+        resources = self.azure.query_resources(provider, custom_where=state_filter)
         if isinstance(resources, dict) and "error" in resources:
             return f"Error discoverying {keyword}: {resources['error']}"
 
@@ -220,8 +253,119 @@ class IntentHandler:
         response += "| Name | Resource Group | Location | Type |\n"
         response += "| :--- | :--- | :--- | :--- |\n"
         for res in resources:
-            # Type is often long, so we take the last part
-            short_type = res['type'].split('/')[-1]
-            response += f"| {res['name']} | {res['resourceGroup']} | {res['location']} | {short_type} |\n"
+            response += f"| {res['name']} | {res['resourceGroup']} | {res['location']} | {res['type'].split('/')[-1]} |\n"
+        
+        return response
+
+    def _handle_dynamic_search(self, keywords):
+        """Try to find any resource where the type or name contains the provided keywords."""
+        filters = " or ".join([f"type contains '{kw}' or name contains '{kw}'" for kw in keywords])
+        resources = self.azure.query_resources(custom_where=filters, limit=10)
+        
+        if not resources:
+            return "I couldn't find any resources matching those keywords in your subscription."
+
+        response = "### 🔍 Discovery Results\n\n"
+        response += "I found these resources that might match your query:\n\n"
+        response += "| Name | Type | Resource Group | Location |\n"
+        response += "| :--- | :--- | :--- | :--- |\n"
+        for res in resources:
+            response += f"| {res['name']} | `{res['type'].split('/')[-1]}` | {res['resourceGroup']} | {res['location']} |\n"
+        
+        return response
+
+    def _handle_list_subscriptions(self):
+        subs = self.azure.list_subscriptions()
+        if isinstance(subs, dict) and "error" in subs:
+            return f"Error fetching subscriptions: {subs['error']}"
+
+        if not subs:
+            return "No subscriptions found for the current credential."
+
+        response = "### Accessible Azure Subscriptions\n\n"
+        response += "| Subscription Name | Subscription ID | State |\n"
+        response += "| :--- | :--- | :--- |\n"
+        for sub in subs:
+            response += f"| {sub['display_name']} | `{sub['id']}` | {sub['state']} |\n"
+        
+        return response
+
+    def _handle_performance_filter(self, metric_type, direction, threshold):
+        # 1. Get List of VMs with IDs from Resource Graph (Fast)
+        project = "id, name, resourceGroup, location"
+        vms = self.azure.query_resources("Microsoft.Compute/virtualMachines", project_fields=project, limit=20)
+        
+        if not vms:
+            return "No VMs found to analyze performance."
+
+        metric_name = "Percentage CPU" if metric_type == "cpu" else "Available Memory Bytes"
+        
+        results = []
+        for vm in vms:
+            # Note: In a real production env, you'd use a background task / orchestration here
+            # But for Phase 1, we do a targeted batch scan.
+            val = self.azure.get_resource_metrics(vm['id'], metric_name)
+            
+            # Simple filtering logic
+            if direction in ["greater", "higher", "more"] and val > threshold:
+                results.append({"name": vm['name'], "rg": vm['resourceGroup'], "val": val})
+            elif direction in ["less", "below"] and val < threshold:
+                results.append({"name": vm['name'], "rg": vm['resourceGroup'], "val": val})
+
+        if not results:
+            return f"No VMs found with {metric_type.upper()} usage {direction} than {threshold}%."
+
+        response = f"### 🚀 VMs with {metric_type.upper()} {direction} than {threshold}%\n"
+        response += f"*Analysis period: Last 24 hours (Max Aggregation)*\n\n"
+        response += "| VM Name | Resource Group | Peak Usage |\n"
+        response += "| :--- | :--- | :--- |\n"
+        for r in results:
+            unit = "%" if metric_type == "cpu" else " MB"
+            val_display = f"{r['val']:.1f}{unit}"
+            response += f"| {r['name']} | {r['rg']} | **{val_display}** |\n"
+        
+        return response
+
+    def _handle_help(self):
+        return (
+            "### 🤖 Azure-Agent Capabilities\n\n"
+            "I can help you monitor and discover your Azure infrastructure using natural language. "
+            "Here are the specific things I can do:\n\n"
+            "#### 🖥️ Compute\n"
+            "- **List VMs**: 'Show all my virtual machines'\n"
+            "- **VM Status**: 'What is the status of VM web-server-01?'\n"
+            "- **Metrics**: 'Show CPU for MyVMName' or 'Memory for analytics-db'\n"
+            "- **Inventory**: 'Disk count for all VMs'\n\n"
+            "#### 🌐 Networking\n"
+            "- **VNets**: 'List all virtual networks'\n"
+            "- **Public IPs**: 'Show my public IP addresses'\n"
+            "- **State Alerts**: 'List unattached disks' or 'Show stopped VMs'\n\n"
+            "#### 📂 Organization & Discovery\n"
+            "- **Subscriptions**: 'List all my subscriptions'\n"
+            "- **Resource Groups**: 'List resource groups'\n"
+            "- **Wide Discovery**: I can find **100+ resource types** (SQL, Storage, Key Vaults, AKS, Firewalls, etc.). "
+            "Just ask: 'Show all storage accounts' or 'List my key vaults'.\n\n"
+            "--- \n"
+            "*Note: I am currently in read-only mode (Phase 1).* "
+        )
+
+    def _handle_vm_disk_count(self):
+        # Optimized Kusto query to project Name and calculate Disk Count
+        # (array_length of dataDisks + 1 for OS disk)
+        project = "name, resourceGroup, disk_count = array_length(properties.storageProfile.dataDisks) + 1"
+        resources = self.azure.query_resources("Microsoft.Compute/virtualMachines", project_fields=project)
+        
+        if isinstance(resources, dict) and "error" in resources:
+            return f"Error fetching disk counts: {resources['error']}"
+
+        if not resources:
+            return "No Virtual Machines found to count disks."
+
+        response = "### VM Disk Inventory\n\n"
+        response += "| VM Name | Resource Group | Total Disks |\n"
+        response += "| :--- | :--- | :--- |\n"
+        for res in resources:
+            count = res.get('disk_count', 1)
+            response += f"| {res['name']} | {res['resourceGroup']} | {count} |\n"
         
         return response

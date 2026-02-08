@@ -1,0 +1,20 @@
+services:
+  azure-agent:
+    build: .
+    container_name: azure-agent
+    ports:
+      - "${PORT:-6003}:6003"
+    env_file:
+      - .env
+    restart: unless-stopped
+    networks:
+      - webui-net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:6003/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+networks:
+  webui-net:
+    external: true

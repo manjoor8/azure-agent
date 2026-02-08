@@ -1,0 +1,12 @@
+fastapi
+uvicorn[standard]
+pydantic>=2.0
+python-dotenv
+azure-identity
+azure-mgmt-resource
+azure-mgmt-compute
+azure-mgmt-network
+azure-mgmt-monitor
+azure-mgmt-resourcegraph
+pandas
+openai

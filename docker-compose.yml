@@ -1,6 +1,7 @@
 services:
   azure-agent:
     build: .
+    image: azure-agent:latest
     container_name: azure-agent
     ports:
       - "${PORT:-6003}:6003"

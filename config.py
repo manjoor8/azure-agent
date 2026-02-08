@@ -12,7 +12,7 @@ AZURE_CLIENT_SECRET = os.getenv("AZURE_CLIENT_SECRET")
 AZURE_SUBSCRIPTION_ID = os.getenv("AZURE_SUBSCRIPTION_ID")
 
 # App Configuration
-PORT = int(os.getenv("PORT", 8000))
+PORT = int(os.getenv("PORT", 6003))
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
 
 # Logging Setup

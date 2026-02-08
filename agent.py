@@ -1,12 +1,35 @@
 import time
 import uuid
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from config import logger, validate_config, PORT
 from models import ChatCompletionRequest, ChatCompletionResponse, ChatCompletionChoice, Message, ChatCompletionUsage
 from intent_handler import IntentHandler
 
 app = FastAPI(title="Azure-Agent API", version="1.0.0")
+
+# Add CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+    expose_headers=["*"],
+)
+
 intent_handler = IntentHandler()
+
+@app.middleware("http")
+async def log_requests(request, call_next):
+    # Skip logging for OPTIONS/Preflight requests to keep logs clean
+    if request.method == "OPTIONS":
+        return await call_next(request)
+        
+    logger.info(f"Incoming request: {request.method} {request.url.path}")
+    response = await call_next(request)
+    logger.info(f"Response status: {response.status_code}")
+    return response
 
 @app.on_event("startup")
 async def startup_event():
@@ -17,6 +40,33 @@ async def startup_event():
 @app.get("/health")
 def health():
     return {"status": "healthy", "service": "Azure-Agent"}
+
+@app.get("/")
+@app.get("/v1")
+@app.get("/v1/")
+async def v1_root():
+    """Satisfy root-level connection pings from various versions of WebUI."""
+    return {"status": "online", "message": "Azure-Agent API is active"}
+
+@app.get("/models")
+@app.get("/v1/models")
+@app.get("/v1/models/")
+async def list_models():
+    """Detailed dummy endpoint to satisfy OpenAI API connection checks."""
+    return {
+        "object": "list",
+        "data": [
+            {
+                "id": "azure-agent",
+                "object": "model",
+                "created": int(time.time()),
+                "owned_by": "azure-agent",
+                "permission": [],
+                "root": "azure-agent",
+                "parent": None
+            }
+        ]
+    }
 
 @app.post("/v1/chat/completions", response_model=ChatCompletionResponse)
 async def chat_completions(request: ChatCompletionRequest):

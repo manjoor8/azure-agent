@@ -9,9 +9,11 @@ ENV PORT=6003
 # Set work directory
 WORKDIR /app
 
-# Install dependencies
+# Install dependencies and curl for healthchecks
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN apt-get update && apt-get install -y curl && \
+    pip install --no-cache-dir -r requirements.txt && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # Copy project
 COPY . .

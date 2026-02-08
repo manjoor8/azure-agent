@@ -2,6 +2,56 @@ import re
 from azure_service import AzureService
 from config import logger, AZURE_SUBSCRIPTION_ID
 
+# Mapping for Top 50+ Azure Services
+AZURE_SERVICE_MAP = {
+    # Compute
+    "vm": "Microsoft.Compute/virtualMachines",
+    "function": "Microsoft.Web/sites",
+    "web app": "Microsoft.Web/sites",
+    "app service": "Microsoft.Web/sites",
+    "aks": "Microsoft.ContainerService/managedClusters",
+    "kubernetes": "Microsoft.ContainerService/managedClusters",
+    "acr": "Microsoft.ContainerRegistry/registries",
+    
+    # Storage & Data
+    "storage": "Microsoft.Storage/storageAccounts",
+    "sql": "Microsoft.Sql/servers/databases",
+    "cosmos": "Microsoft.DocumentDB/databaseAccounts",
+    "redis": "Microsoft.Cache/Redis",
+    "postgresql": "Microsoft.DBforPostgreSQL/servers",
+    "mysql": "Microsoft.DBforMySQL/servers",
+    "synapse": "Microsoft.Synapse/workspaces",
+    "databricks": "Microsoft.Databricks/workspaces",
+    
+    # Networking
+    "vnet": "Microsoft.Network/virtualNetworks",
+    "nsg": "Microsoft.Network/networkSecurityGroups",
+    "load balancer": "Microsoft.Network/loadBalancers",
+    "firewall": "Microsoft.Network/azureFirewalls",
+    "application gateway": "Microsoft.Network/applicationGateways",
+    "front door": "Microsoft.Network/frontdoors",
+    "cdn": "Microsoft.Cdn/profiles",
+    
+    # Security & Management
+    "key vault": "Microsoft.KeyVault/vaults",
+    "monitor": "Microsoft.Insights/components",
+    "log analytics": "Microsoft.OperationalInsights/workspaces",
+    "automation": "Microsoft.Automation/automationAccounts",
+    "policy": "Microsoft.Authorization/policyDefinitions",
+    "sentinel": "Microsoft.OperationalInsights/workspaces",
+    
+    # Integration & AI
+    "service bus": "Microsoft.ServiceBus/namespaces",
+    "logic app": "Microsoft.Logic/workflows",
+    "event grid": "Microsoft.EventGrid/topics",
+    "event hub": "Microsoft.EventHub/namespaces",
+    "api management": "Microsoft.ApiManagement/service",
+    "search": "Microsoft.Search/searchServices",
+    "cognitive": "Microsoft.CognitiveServices/accounts",
+    "machine learning": "Microsoft.MachineLearningServices/workspaces",
+    "purview": "Microsoft.Purview/accounts"
+}
+
 class IntentHandler:
     def __init__(self):
         self.azure = AzureService()
@@ -30,6 +80,19 @@ class IntentHandler:
         # Intent: List Resource Groups
         if any(kw in query for kw in ["resource groups", "list rgs", "show rgs"]):
             return self._handle_list_rgs()
+
+        # Intent: List Virtual Networks
+        if any(kw in query for kw in ["vnets", "networks", "virtual network"]):
+            return self._handle_list_vnets()
+
+        # Intent: List Public IPs
+        if any(kw in query for kw in ["public ips", "ip addresses", "ips"]):
+            return self._handle_list_public_ips()
+
+        # Generic Intent: Top 50 Services Discovery
+        for keyword, provider in AZURE_SERVICE_MAP.items():
+            if keyword in query:
+                return self._handle_generic_discovery(keyword, provider)
 
         # Default fallback
         return (
@@ -112,4 +175,53 @@ class IntentHandler:
         response = "### Resource Groups\n\n"
         for rg in rgs:
             response += f"- `{rg['name']}` ({rg['location']})\n"
+        return response
+
+    def _handle_list_vnets(self):
+        vnets = self.azure.list_vnets()
+        if isinstance(vnets, dict) and "error" in vnets:
+            return f"Error fetching VNets: {vnets['error']}"
+
+        if not vnets:
+            return "No Virtual Networks found in the current subscription."
+
+        response = f"### Virtual Networks (Subscription: `{AZURE_SUBSCRIPTION_ID}`)\n\n"
+        response += "| Name | Resource Group | Location | Address Prefix |\n"
+        response += "| :--- | :--- | :--- | :--- |\n"
+        for vnet in vnets:
+            prefixes = ", ".join(vnet['address_space'])
+            response += f"| {vnet['name']} | {vnet['resource_group']} | {vnet['location']} | {prefixes} |\n"
+        return response
+
+    def _handle_list_public_ips(self):
+        ips = self.azure.list_public_ips()
+        if isinstance(ips, dict) and "error" in ips:
+            return f"Error fetching Public IPs: {ips['error']}"
+
+        if not ips:
+            return "No Public IP Addresses found."
+
+        response = f"### Public IP Addresses (Subscription: `{AZURE_SUBSCRIPTION_ID}`)\n\n"
+        response += "| Name | IP Address | Resource Group | Location | SKU |\n"
+        response += "| :--- | :--- | :--- | :--- | :--- |\n"
+        for ip in ips:
+            response += f"| {ip['name']} | {ip['ip_address']} | {ip['resource_group']} | {ip['location']} | {ip['sku']} |\n"
+        return response
+
+    def _handle_generic_discovery(self, keyword, provider):
+        resources = self.azure.query_resources(provider)
+        if isinstance(resources, dict) and "error" in resources:
+            return f"Error discoverying {keyword}: {resources['error']}"
+
+        if not resources:
+            return f"No `{keyword}` resources found in the current subscription."
+
+        response = f"### Azure {keyword.title()} Resources\n\n"
+        response += "| Name | Resource Group | Location | Type |\n"
+        response += "| :--- | :--- | :--- | :--- |\n"
+        for res in resources:
+            # Type is often long, so we take the last part
+            short_type = res['type'].split('/')[-1]
+            response += f"| {res['name']} | {res['resourceGroup']} | {res['location']} | {short_type} |\n"
+        
         return response

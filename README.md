@@ -62,7 +62,15 @@ Follow these steps to connect the Azure-Agent to your Open WebUI instance:
 5. **Select Model**: Go back to the chat interface, and from the model dropdown menu at the top, select **Azure-Agent**.
 6. **Start Chatting**: You can now ask questions about your Azure infrastructure in natural language.
 
-> **Note**: Since the agent is on the same `webui-net` network as Open WebUI, use `http://azure-agent:6003/v1` as the Base URL.
+### Method 2: Integration via Tools (Recommended for HTTPS)
+If you prefer not to use environment variables, you can add Azure-Agent as a **Tool** within Open WebUI. This bypasses the Mixed Content (HTTPS) error:
+
+1. Go to **Workspace > Tools > Create Tool**.
+2. Name it `Azure Infrastructure`.
+3. Paste the contents of `webui_tool.py` into the code editor.
+4. Save and enable the tool for your chats.
+
+> **Note**: Since the agent is on the same `webui-net` network as Open WebUI, use `http://azure-agent:6003/v1` as the internal URL.
 
 ## Example Queries
 

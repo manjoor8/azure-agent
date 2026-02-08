@@ -4,6 +4,8 @@ from azure.mgmt.compute import ComputeManagementClient
 from azure.mgmt.network import NetworkManagementClient
 from azure.mgmt.monitor import MonitorManagementClient
 from azure.mgmt.resource import ResourceManagementClient
+from azure.mgmt.resourcegraph import ResourceGraphClient
+from azure.mgmt.resourcegraph.models import QueryRequest
 from config import AZURE_TENANT_ID, AZURE_CLIENT_ID, AZURE_CLIENT_SECRET, AZURE_SUBSCRIPTION_ID, logger
 
 class AzureService:
@@ -20,6 +22,7 @@ class AzureService:
         self.compute_client = ComputeManagementClient(self.credential, self.subscription_id)
         self.network_client = NetworkManagementClient(self.credential, self.subscription_id)
         self.monitor_client = MonitorManagementClient(self.credential, self.subscription_id)
+        self.graph_client = ResourceGraphClient(self.credential)
 
     def list_vms(self, resource_group=None):
         """List all VMs in a subscription or specific resource group."""
@@ -95,4 +98,57 @@ class AzureService:
             return [{"name": g.name, "location": g.location} for g in groups]
         except Exception as e:
             logger.error(f"Error listing resource groups: {e}")
+            return {"error": str(e)}
+
+    def list_vnets(self):
+        """List all Virtual Networks."""
+        try:
+            vnets = self.network_client.virtual_networks.list_all()
+            result = []
+            for vnet in vnets:
+                result.append({
+                    "name": vnet.name,
+                    "location": vnet.location,
+                    "resource_group": vnet.id.split('/')[4],
+                    "address_space": vnet.address_space.address_prefixes
+                })
+            return result
+        except Exception as e:
+            logger.error(f"Error listing VNets: {e}")
+            return {"error": str(e)}
+
+    def list_public_ips(self):
+        """List all Public IP Addresses."""
+        try:
+            ips = self.network_client.public_ip_addresses.list_all()
+            result = []
+            for ip in ips:
+                result.append({
+                    "name": ip.name,
+                    "location": ip.location,
+                    "resource_group": ip.id.split('/')[4],
+                    "ip_address": ip.ip_address if ip.ip_address else "Dynamic (N/A)",
+                    "sku": ip.sku.name if ip.sku else "Basic"
+                })
+            return result
+        except Exception as e:
+            logger.error(f"Error listing Public IPs: {e}")
+            return {"error": str(e)}
+
+    def query_resources(self, resource_type_filter: str = None):
+        """Query any resource type using Azure Resource Graph."""
+        try:
+            query = "resources | project name, type, resourceGroup, location, tags, subscriptionId"
+            if resource_type_filter:
+                query += f" | where type =~ '{resource_type_filter}'"
+            
+            request = QueryRequest(
+                subscriptions=[self.subscription_id],
+                query=query
+            )
+            
+            response = self.graph_client.resources(request)
+            return response.data
+        except Exception as e:
+            logger.error(f"Error querying Resource Graph: {e}")
             return {"error": str(e)}
